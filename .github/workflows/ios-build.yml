@@ -1,0 +1,65 @@
+name: Build iOS (Device)
+
+# Builds a production IPA via EAS local build on a macOS runner so you can
+# download it from Actions artifacts and install on a physical iPhone.
+#
+# Prerequisites — set these GitHub Secrets:
+#   EXPO_TOKEN — Expo personal access token (https://expo.dev/settings/access-tokens)
+#
+# The Expo account hosting the project must have an active Apple Developer
+# membership, a registered device (your phone's UDID), and a valid
+# distribution certificate + provisioning profile attached to the EAS project.
+# See: https://docs.expo.dev/build/setup/
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS Build profile (production|staging)
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - staging
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Build iOS (EAS local)
+        run: >
+          eas build --platform ios --local --output multica.ipa
+          --profile ${{ inputs.profile }}
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: multica-ios-${{ inputs.profile }}
+          path: multica.ipa
+          if-no-files-found: error
+          retention-days: 7
