@@ -1,21 +1,18 @@
 name: Build iOS (Device)
 
-# Builds a production IPA via EAS local build on a macOS runner so you can
-# download it from Actions artifacts and install on a physical iPhone.
+# Builds a production IPA using raw xcodebuild on a macOS runner. No EAS, no
+# Expo credentials, no signing — the .app is built with CODE_SIGNING_ALLOWED=NO
+# and wrapped in a standard Payload/Multica.app → .ipa structure.
 #
-# Prerequisites — set these GitHub Secrets:
-#   EXPO_TOKEN — Expo personal access token (https://expo.dev/settings/access-tokens)
-#
-# The Expo account hosting the project must have an active Apple Developer
-# membership, a registered device (your phone's UDID), and a valid
-# distribution certificate + provisioning profile attached to the EAS project.
-# See: https://docs.expo.dev/build/setup/
+# Download the artifact and sign it with your own identity:
+#   codesign -f -s "<identity>" --entitlements <path> Payload/Multica.app
+#   zip -r multica-signed.ipa Payload/
 
 on:
   workflow_dispatch:
     inputs:
       profile:
-        description: EAS Build profile (production|staging)
+        description: Build variant
         required: true
         default: production
         type: choice
@@ -46,20 +43,51 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Setup EAS CLI
-        run: npm install -g eas-cli
-
-      - name: Build iOS (EAS local)
-        run: >
-          eas build --platform ios --local --output multica.ipa
-          --profile ${{ inputs.profile }}
+      - name: Prebuild native project
+        working-directory: apps/mobile
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          APP_ENV: ${{ inputs.profile == 'staging' && 'staging' || 'production' }}
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Install CocoaPods dependencies
+        working-directory: apps/mobile/ios
+        run: pod install
+
+      - name: Detect Xcode scheme
+        working-directory: apps/mobile
+        run: |
+          SCHEME=$(xcodebuild -list -workspace ios/*.xcworkspace \
+            2>/dev/null | awk '/Schemes:/{f=1; next} f && NF{gsub(/^[ \t]+|[ \t]+$/,""); print; exit}')
+          echo "SCHEME=${SCHEME}" >> "$GITHUB_ENV"
+
+      - name: Build .app (unsigned)
+        working-directory: apps/mobile
+        env:
+          APP_ENV: ${{ inputs.profile == 'staging' && 'staging' || 'production' }}
+        run: |
+          xcodebuild \
+            -workspace "ios/${SCHEME}.xcworkspace" \
+            -scheme "${SCHEME}" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            clean build
+
+      - name: Package IPA
+        run: |
+          SCHEME="${SCHEME:-Multica}"
+          mkdir -p Payload
+          cp -R "apps/mobile/build/Build/Products/Release-iphoneos/${SCHEME}.app" \
+            "Payload/${SCHEME}.app"
+          cd Payload && zip -r ../multica.ipa . && cd ..
+          rm -rf Payload
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: multica-ios-${{ inputs.profile }}
+          name: multica-ios-unsigned
           path: multica.ipa
           if-no-files-found: error
           retention-days: 7
