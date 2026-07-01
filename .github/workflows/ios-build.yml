@@ -1,8 +1,11 @@
 name: Build iOS (Device)
 
-# Builds a production IPA using raw xcodebuild on a macOS runner. No EAS, no
-# Expo credentials, no signing — the .app is built with CODE_SIGNING_ALLOWED=NO
-# and wrapped in a standard Payload/Multica.app → .ipa structure.
+# Builds a production IPA using xcodebuild archive on a macOS runner. No EAS,
+# no Expo credentials, no signing — the .app is archived with
+# CODE_SIGNING_ALLOWED=NO and wrapped in a standard Payload/<scheme>.app → .ipa
+# structure. The ARCHIVED .app is what sideload/sign services (AltStore,
+# Sideloadly, Signulous) can re-sign; a raw `xcodebuild build` .app frequently
+# fails to sign, so we archive instead of build.
 #
 # Download the artifact and sign it with your own identity:
 #   codesign -f -s "<identity>" --entitlements <path> Payload/Multica.app
@@ -69,26 +72,33 @@ jobs:
           echo "WORKSPACE=${WORKSPACE}" >> "$GITHUB_ENV"
           echo "SCHEME=${SCHEME}" >> "$GITHUB_ENV"
 
-      - name: Build .app (unsigned)
+      - name: Archive .app (unsigned)
+        # `archive` (not plain `build`) yields a distribution-ready .app inside
+        # an .xcarchive that sideload/sign services can re-sign. Plain `build`
+        # .app frequently fails to sign. Kept unsigned (CODE_SIGNING_ALLOWED=NO)
+        # for the user to sign with their own identity.
         working-directory: apps/mobile
         env:
           APP_ENV: ${{ inputs.profile == 'staging' && 'staging' || 'production' }}
         run: |
-          xcodebuild \
+          xcodebuild clean archive \
             -workspace "${WORKSPACE}" \
             -scheme "${SCHEME}" \
             -configuration Release \
+            -archivePath "build/${SCHEME}.xcarchive" \
             -sdk iphoneos \
-            -derivedDataPath build \
+            -destination 'generic/platform=iOS' \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            clean build
+            COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Package IPA
         run: |
           SCHEME="${SCHEME:-Multica}"
           mkdir -p Payload
-          cp -R "apps/mobile/build/Build/Products/Release-iphoneos/${SCHEME}.app" \
+          cp -R "apps/mobile/build/${SCHEME}.xcarchive/Products/Applications/${SCHEME}.app" \
             "Payload/${SCHEME}.app"
           cd Payload && zip -r ../multica.ipa . && cd ..
           rm -rf Payload
