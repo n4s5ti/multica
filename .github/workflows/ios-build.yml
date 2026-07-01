@@ -54,10 +54,20 @@ jobs:
         run: pod install
 
       - name: Detect Xcode scheme
+      - name: Detect Xcode workspace and scheme
         working-directory: apps/mobile
         run: |
-          SCHEME=$(xcodebuild -list -workspace ios/*.xcworkspace \
-            2>/dev/null | awk '/Schemes:/{f=1; next} f && NF{gsub(/^[ \t]+|[ \t]+$/,""); print; exit}')
+          # The workspace FILENAME is the reliable identifier — Expo names the
+          # workspace + scheme after the app name ("Multica"). Deriving the
+          # scheme from the workspace basename avoids grabbing a dependency
+          # scheme (e.g. "boost" injected by buildReactNativeFromSource) that
+          # has no matching .xcworkspace and makes xcodebuild fail to open it.
+          WORKSPACE=$(ls -d ios/*.xcworkspace 2>/dev/null | grep -vi pods | head -1)
+          if [ -z "$WORKSPACE" ]; then
+            echo "::error::No .xcworkspace found under ios/"; exit 1
+          fi
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "WORKSPACE=${WORKSPACE}" >> "$GITHUB_ENV"
           echo "SCHEME=${SCHEME}" >> "$GITHUB_ENV"
 
       - name: Build .app (unsigned)
@@ -66,7 +76,7 @@ jobs:
           APP_ENV: ${{ inputs.profile == 'staging' && 'staging' || 'production' }}
         run: |
           xcodebuild \
-            -workspace "ios/${SCHEME}.xcworkspace" \
+            -workspace "${WORKSPACE}" \
             -scheme "${SCHEME}" \
             -configuration Release \
             -sdk iphoneos \
