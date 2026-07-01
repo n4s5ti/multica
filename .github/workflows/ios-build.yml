@@ -53,7 +53,6 @@ jobs:
         working-directory: apps/mobile/ios
         run: pod install
 
-      - name: Detect Xcode scheme
       - name: Detect Xcode workspace and scheme
         working-directory: apps/mobile
         run: |
