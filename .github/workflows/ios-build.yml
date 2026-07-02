@@ -102,6 +102,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            SWIFT_STRICT_CONCURRENCY=minimal \
             COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Package IPA
