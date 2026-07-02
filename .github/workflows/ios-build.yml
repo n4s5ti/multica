@@ -56,6 +56,16 @@ jobs:
         working-directory: apps/mobile/ios
         run: pod install
 
+      - name: Pin Xcode (latest)
+        # macos-latest ships multiple Xcodes; without a pin, the runner picks
+        # non-deterministically. expo-modules-core's Swift sources fail to
+        # compile under older Xcode (e.g. 16.4: "unknown attribute 'MainActor'",
+        # Sendable violations) but succeed on the latest (26.x). Pin to latest
+        # so archive/build are reproducible and signable.
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest
+
       - name: Detect Xcode workspace and scheme
         working-directory: apps/mobile
         run: |
