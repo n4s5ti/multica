@@ -111,7 +111,11 @@ jobs:
           mkdir -p Payload
           cp -R "apps/mobile/build/${SCHEME}.xcarchive/Products/Applications/${SCHEME}.app" \
             "Payload/${SCHEME}.app"
-          cd Payload && zip -r ../multica.ipa . && cd ..
+          # Zip the Payload/ directory itself (from the parent), NOT its
+          # contents. Apple/sideload tools require Payload/<scheme>.app/ at the
+          # zip root; `cd Payload && zip ... .` strips the Payload/ prefix and
+          # produces <scheme>.app/ at root, which fails to re-sign.
+          zip -r multica.ipa Payload
           rm -rf Payload
 
       - name: Upload IPA artifact
